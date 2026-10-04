@@ -7,23 +7,42 @@ function genKey() {
   for (let i = 0; i < 12; i++) s += ALPHA[randomBytes(1)[0] % ALPHA.length];
   return `APEX-${s.slice(0,4)}-${s.slice(4,8)}-${s.slice(8,12)}`;
 }
-const EXPIRY = { weekly: "7 days", monthly: "30 days", lifetime: null };
+const DAYS = { weekly: 7, monthly: 30 };
 export default async function handler(req, res) {
   const { secret, action, plan, count, key } = req.query || {};
-  if (secret !== process.env.ADMIN_SECRET) return res.status(403).json({ ok: false });
+  if (secret !== process.env.ADMIN_SECRET) {
+    const v = process.env.ADMIN_SECRET || "";
+    return res.status(403).json({ ok: false, envSet: v.length > 0, envLen: v.length });
+  }
   if (action === "gen") {
-    if (!EXPIRY.hasOwnProperty(plan)) return res.json({ ok: false, error: "bad plan" });
+    if (!["weekly", "monthly", "lifetime"].includes(plan)) return res.json({ ok: false, error: "bad plan" });
     const n = Math.min(parseInt(count) || 1, 50);
     const out = [];
     for (let i = 0; i < n; i++) {
       const k = genKey();
-      await db.from("keys").insert({ key: k, plan, expires_at: EXPIRY[plan] ? new Date(Date.now() + { weekly: 7, monthly: 30 }[plan] * 864e5).toISOString() : null, revoked: false });
+      await db.from("keys").insert({ key: k, plan, expires_at: DAYS[plan] ? new Date(Date.now() + DAYS[plan] * 864e5).toISOString() : null, revoked: false });
       out.push(k);
     }
     return res.json({ ok: true, keys: out });
   }
+  if (action === "list") {
+    const { data } = await db.from("keys").select("key,plan,expires_at,hwid,revoked").order("key");
+    return res.json({ ok: true, keys: data || [] });
+  }
   if (action === "revoke") {
     await db.from("keys").update({ revoked: true }).eq("key", key);
+    return res.json({ ok: true });
+  }
+  if (action === "unrevoke") {
+    await db.from("keys").update({ revoked: false }).eq("key", key);
+    return res.json({ ok: true });
+  }
+  if (action === "resethwid") {
+    await db.from("keys").update({ hwid: null }).eq("key", key);
+    return res.json({ ok: true });
+  }
+  if (action === "delete") {
+    await db.from("keys").delete().eq("key", key);
     return res.json({ ok: true });
   }
   return res.json({ ok: false });
