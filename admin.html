@@ -13,36 +13,53 @@ pre{background:#000;border:1px solid rgba(204,17,17,.25);padding:14px;border-rad
 .krow{display:flex;align-items:center;gap:8px;background:#000;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:8px 10px;margin:6px 0;font-size:12px}
 .krow .k{flex:1;font-family:monospace}.ok{color:#7dff9b}.bad{color:#ff5555}.dim{color:#8a8a90}
 .krow .acts{display:flex;gap:4px}
+#gate{text-align:center;padding:20px 0}#panel{display:none}
+.err{color:#ff5555;font-size:13px;min-height:20px}
 </style></head>
-<body><main><h1>APEX <span>KEYS</span></h1><p class="sub">ADMIN PANEL</p>
+<body><main>
+<div id="gate"><h1>APEX <span>ADMIN</span></h1><p class="sub">ENTER SECRET TO CONTINUE</p>
 <input id="s" type="password" placeholder="Admin secret" autocomplete="off">
+<button onclick="unlock()">UNLOCK</button><p class="err" id="e"></p></div>
+<div id="panel"><h1>APEX <span>KEYS</span></h1><p class="sub">ADMIN PANEL <a href="#" id="lock" style="color:#8a8a90">lock</a></p>
 <div class="row"><select id="p"><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="lifetime">Lifetime</option></select>
 <input id="c" type="number" value="1" min="1" max="50"></div>
 <div class="row"><button onclick="gen()">GENERATE</button><button onclick="load()" class="ghost" style="flex:.6">REFRESH LIST</button></div>
 <pre id="o">keys appear here…</pre>
-<h2>ACTIVE KEYS</h2><div id="list"></div></main>
+<h2>ACTIVE KEYS</h2><div id="list"></div></div></main>
 <script>
 const $=id=>document.getElementById(id);
+let S='';
 async function api(q){const r=await fetch('/api/admin?'+q);return r.json();}
+async function unlock(){
+  S=$('s').value;
+  const j=await api(`secret=${encodeURIComponent(S)}&action=list`);
+  if(!j.ok){$('e').textContent='wrong secret';return;}
+  $('gate').style.display='none';$('panel').style.display='block';
+  renderList(j.keys);
+}
+$('lock').onclick=()=>{S='';location.reload();};
 async function gen(){
   $('o').textContent='working…';
-  const j=await api(`secret=${encodeURIComponent($('s').value)}&action=gen&plan=${$('p').value}&count=${$('c').value}`);
+  const j=await api(`secret=${encodeURIComponent(S)}&action=gen&plan=${$('p').value}&count=${$('c').value}`);
   $('o').textContent=j.ok?j.keys.join('\n'):(j.error||'denied');
   if(j.ok)load();
 }
 async function act(action,key){
-  await api(`secret=${encodeURIComponent($('s').value)}&action=${action}&key=${encodeURIComponent(key)}`);
+  await api(`secret=${encodeURIComponent(S)}&action=${action}&key=${encodeURIComponent(key)}`);
   load();
 }
 async function load(){
-  const j=await api(`secret=${encodeURIComponent($('s').value)}&action=list`);
+  const j=await api(`secret=${encodeURIComponent(S)}&action=list`);
+  if(j.ok)renderList(j.keys);
+}
+function renderList(keys){
   const box=$('list');box.innerHTML='';
-  if(!j.ok){box.innerHTML='<span class="bad">denied — check secret</span>';return;}
-  if(!j.keys.length){box.innerHTML='<span class="dim">no keys</span>';return;}
-  j.keys.forEach(k=>{
+  if(!keys.length){box.innerHTML='<span class="dim">no keys</span>';return;}
+  keys.forEach(k=>{
     const exp=k.expires_at?new Date(k.expires_at).toLocaleDateString():'never';
     const d=document.createElement('div');d.className='krow';
-    d.innerHTML=`<span class="k ${k.revoked?'bad':'ok'}">${k.key}</span><span class="dim">${k.plan} · ${exp} · ${k.hwid?'bound':'free'}</span><span class="acts"></span>`;
+    d.innerHTML=`<span class="k ${k.revoked?'bad':'ok'}"></span><span class="dim">${k.plan} · ${exp} · ${k.hwid?'bound':'free'}</span><span class="acts"></span>`;
+    d.querySelector('.k').textContent=k.key;
     const a=d.querySelector('.acts');
     [['revoke','BAN'],['unrevoke','UNBAN'],['resethwid','HWID'],['delete','DEL']].forEach(([ac,t])=>{
       const b=document.createElement('button');b.className='ghost';b.textContent=t;
